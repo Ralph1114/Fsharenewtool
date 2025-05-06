@@ -24,8 +24,21 @@ def extract_folder_code(url):
     return match.group(1) if match else None
 
 def file_exists_in_local_drive(filename):
-    target_path = os.path.join("/content/drive/MyDrive/Moviesall/media/movies/All", filename)
-    return os.path.exists(target_path)
+    norm_fshare = normalize_filename(filename)
+    target_dir = "/content/drive/MyDrive/Moviesall/media/movies/All"
+
+    for root, dirs, files in os.walk(target_dir):
+        # Kiểm tra tên folder con
+        for d in dirs:
+            if normalize_filename(d) == norm_fshare:
+                return True
+
+        # Kiểm tra tên file
+        for f in files:
+            if normalize_filename(f) == norm_fshare:
+                return True
+
+    return False
 
 def download_and_upload(file_url, file_password, cf):
     header = get_headers(cf)
