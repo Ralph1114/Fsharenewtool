@@ -10,7 +10,7 @@ Fshare Tool is a tool to transfer Fshare file to Google Drive, OneDrive using Fs
 
 
 ## Usage
-Create Colab now.  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1qtO9b-pp64DkNRox0o5dyYtxJWOgjteR)
+Create Colab now.  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/Ralph1114/Fsharenewtool/blob/main/Download_Fshare_To_Google_Drive.ipynb)
 
 
 ## Contributing
