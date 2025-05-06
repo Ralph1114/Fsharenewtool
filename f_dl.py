@@ -1,8 +1,22 @@
 # f_dl.py <Fshare File or Folder URL> [Password]
-import requests, sys, os, time
+import requests, sys, os, time, re
 from function import *
 from urllib.parse import unquote
 
+def normalize_filename(name):
+    """
+    Chuẩn hóa tên file/folder để so sánh chống trùng lặp:
+    - Thay dấu chấm, gạch, gạch dưới bằng khoảng trắng
+    - Bỏ phần mở rộng
+    - Loại các từ khóa dư như: 1080p, bluray, x264, v.v.
+    """
+    import os
+    name = os.path.splitext(name)[0]
+    name = re.sub(r'[._\-]+', ' ', name)
+    name = re.sub(r'\b(1080p|720p|x264|bluray|webrip|web ?dl|vietsub|sub|dub|fshare|remux|hdr|hevc|aac|mp4|mkv|avi|eng|multi|truehd|dts|ac3|h264|h265|10bit)\b', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'[^a-zA-Z0-9 ]', '', name)
+    name = re.sub(r'\s+', ' ', name).strip()
+    return name.lower()
 def get_config():
     ps = myParser()
     return toDict(ps)
