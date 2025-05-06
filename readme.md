@@ -19,9 +19,13 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 ## Edit File Config
 
 ![Screenshot 2025-05-06 at 11 51 15](https://github.com/user-attachments/assets/2f8e4fce-be0e-4ae9-ae0c-816fde5be894)
+
 [Auth]
+
 mail = your_email@example.com
+
 password = your_password
 
 [Drive]
+
 file_download_path = /content/drive/MyDrive/your_folder_name
