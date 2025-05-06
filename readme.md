@@ -19,3 +19,7 @@ Bấm tạo ngay Colab [![Open In Colab](https://colab.research.google.com/asset
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change
+
+## Chỉnh File Config
+
+![Screenshot 2025-05-06 at 11 51 15](https://github.com/user-attachments/assets/2f8e4fce-be0e-4ae9-ae0c-816fde5be894)
