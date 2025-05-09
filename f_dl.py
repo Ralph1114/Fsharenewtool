@@ -110,6 +110,7 @@ def process_folder(folder_url, cf, current_path=""):
         filtered_files = [(n, u) for n, u in files_from_html if n not in drive_existing]
         print(f"🔍 {len(filtered_files)} file cần tải (sau khi lọc):")
         for _, link in filtered_files:
+            print(f"⬇️  Tải: {link}")
             download_and_upload(link, '', cf)
     except Exception as e:
         print("⚠️ Lỗi khi phân tích trang HTML:", e)
