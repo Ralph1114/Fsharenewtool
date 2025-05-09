@@ -1,8 +1,8 @@
-# f_dl.py <Fshare File or Folder URL> [Password]
+# f_dl.py <Fshare Folder URL>
 import requests, sys, os, time, re
 from function import *
-from urllib.parse import unquote
 from bs4 import BeautifulSoup
+from urllib.parse import unquote
 
 def normalize_filename(name):
     import os
@@ -12,6 +12,26 @@ def normalize_filename(name):
     name = re.sub(r'[^a-zA-Z0-9 ]', '', name)
     name = re.sub(r'\s+', ' ', name).strip()
     return name.lower()
+
+def list_drive_files(target_dir):
+    existing = set()
+    for root, dirs, files in os.walk(target_dir):
+        for name in files + dirs:
+            existing.add(normalize_filename(name))
+    return existing
+
+def extract_fshare_file_names(folder_url):
+    session = requests.Session()
+    headers = {"User-Agent": "Mozilla/5.0"}
+    res = session.get(folder_url, headers=headers)
+    soup = BeautifulSoup(res.text, "html.parser")
+    files = []
+    for tag in soup.find_all("a", href=True):
+        if "/file/" in tag["href"]:
+            text = tag.text.strip()
+            if text:
+                files.append((normalize_filename(text), "https://www.fshare.vn" + tag["href"]))
+    return files
 
 def get_config():
     ps = myParser()
@@ -24,38 +44,6 @@ def get_headers(cf):
         "User-Agent": cf['Auth']['user_agent'],
         "Cookie": "session_id=" + cf['Login']['session_id']
     }
-
-def is_file_url(url): return "/file/" in url
-def is_folder_url(url): return "/folder/" in url
-
-def extract_folder_code(url):
-    import re
-    match = re.search(r'/folder/(\w+)', url)
-    return match.group(1) if match else None
-
-def list_drive_files(target_dir):
-    existing_files = set()
-    for root, dirs, files in os.walk(target_dir):
-        for name in files + dirs:
-            existing_files.add(normalize_filename(name))
-    return existing_files
-
-def extract_fshare_file_names(folder_url):
-    session = requests.Session()
-    headers = {"User-Agent": "Mozilla/5.0"}
-    res = session.get(folder_url, headers=headers)
-    soup = BeautifulSoup(res.text, "html.parser")
-    files = []
-    for tag in soup.find_all("a", href=True):
-        if "/file/" in tag["href"]:
-            file_name = tag.text.strip()
-            if file_name:
-                files.append((normalize_filename(file_name), "https://www.fshare.vn" + tag["href"]))
-    return files
-
-def file_exists_in_local_drive(filename, drive_existing):
-    norm_fshare = normalize_filename(filename)
-    return norm_fshare in drive_existing
 
 def download_and_upload(file_url, file_password, cf):
     header = get_headers(cf)
@@ -81,57 +69,37 @@ def download_and_upload(file_url, file_password, cf):
     folder_download = cf['Drive']['file_download_path']
     file_path = os.path.join(folder_download.rstrip('/'), file_name)
 
-    if file_exists_in_local_drive(file_name, list_drive_files(folder_download)):
-        print(f"-> Skipping {file_name}, already exists at destination.")
+    if normalize_filename(file_name) in list_drive_files(folder_download):
+        print(f"⏩ Bỏ qua {file_name}, đã có trong Drive.")
         return
 
     if not os.path.exists(folder_download):
         os.makedirs(folder_download)
 
-    print("┌───────────┐")
-    print("| File Info |")
-    print("└───────────┘")
-    print(f"-> File Name: {file_name}")
-    print(f"-> Save Folder: {folder_download}")
-
+    print("⬇️ Đang tải:", file_name)
     chunk_download(dl_url, file_name, folder_download)
-
-    print("-> File saved locally.")
+    print("✅ Đã lưu:", file_name)
 
     if cf['Drive'].get('remove_file_after_upload', 'False') == 'True':
-        print("-> Done! Removing downloaded file...")
         removeFile(file_path)
 
-def process_folder(folder_url, cf, current_path=""):
-    print("📦 Đang quét thư mục:", folder_url)
-    drive_existing = list_drive_files(cf['Drive']['file_download_path'])
-    try:
-        files_from_html = extract_fshare_file_names(folder_url)
-        filtered_files = [(n, u) for n, u in files_from_html if n not in drive_existing]
-        print(f"🔍 {len(filtered_files)} file cần tải (sau khi lọc):")
-        for _, link in filtered_files:
-            print(f"⬇️  Tải: {link}")
-            download_and_upload(link, '', cf)
-    except Exception as e:
-        print("⚠️ Lỗi khi phân tích trang HTML:", e)
-
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        exit("-> Please include file or folder URL")
+    if len(sys.argv) < 2:
+        exit("-> Please include Fshare folder URL.")
 
-    URL = sys.argv[1]
-    PASSWORD = sys.argv[2] if len(sys.argv) == 3 else ''
-
+    folder_url = sys.argv[1]
     cf = get_config()
+    drive_path = cf['Drive']['file_download_path']
 
-    if cf['Login']['session_id'] == '' or cf['Login']['token'] == '':
-        exit("-> Please login first!")
+    print("📁 Quét Google Drive...")
+    existing_files = list_drive_files(drive_path)
 
-    print("-> Connecting to Fshare...")
+    print("🌐 Quét danh sách file từ Fshare folder...")
+    fshare_files = extract_fshare_file_names(folder_url)
 
-    if is_file_url(URL):
-        download_and_upload(URL, PASSWORD, cf)
-    elif is_folder_url(URL):
-        process_folder(URL, cf)
-    else:
-        print("-> Unsupported Fshare URL!")
+    print("🔍 Lọc file chưa có trong Drive...")
+    to_download = [(name, url) for name, url in fshare_files if name not in existing_files]
+
+    print(f"📦 Tìm thấy {len(to_download)} file cần tải:")
+    for name, link in to_download:
+        download_and_upload(link, '', cf)
