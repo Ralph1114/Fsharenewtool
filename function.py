@@ -33,10 +33,11 @@ def errorInfo(error_code):
     return i[ec] if ec in i else "Unknown Error"
 
 def rq_fshare(type = 'POST', URL = '', header = {}, Data = {}):
-    if type.upper() == 'GET':
-        return requests.get(url = URL, headers = header)
-    else:
-        return requests.post(url = URL, headers = header, json = Data)
+    r = requests.post(url = URL, headers = header, json = Data)
+    if r.status_code != 200:
+        print("⚠️ Fshare API error:", r.status_code, r.text)
+    return r
+
 
 def requestToJson(response):
     import json
