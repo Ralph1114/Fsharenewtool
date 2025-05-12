@@ -17,12 +17,27 @@ def extract_fshare_file_names(folder_url, cf):
     res = requests.get(folder_url, headers=headers)
     soup = BeautifulSoup(res.text, "html.parser")
     files = []
-    for tag in soup.find_all("a", href=True):
-        if "/file/" in tag["href"]:
-            file_url = urljoin("https://www.fshare.vn", tag["href"])
-            file_name = tag.get("title") or tag.text.strip()
-            if file_name:
-                files.append((normalize_filename(file_name), file_url))
+
+    for title_tag in soup.find_all("div", class_="mdc-grid-tile__title"):
+        file_name = title_tag.get_text(strip=True)
+        if not file_name:
+            continue
+
+        fshare_file_tag = title_tag.find_parent("fshare-file")
+        if not fshare_file_tag:
+            continue
+
+        class_list = fshare_file_tag.get("class", [])
+        file_id = None
+        for c in class_list:
+            if c.startswith("file"):
+                file_id = c.replace("file", "")
+                break
+
+        if file_id and len(file_id) >= 8:
+            file_url = urljoin("https://www.fshare.vn", f"/file/{file_id}")
+            files.append((normalize_filename(file_name), file_url))
+
     return files
 
 def list_drive_files(target_dir):
