@@ -1,8 +1,8 @@
 # f_dl.py <Fshare File or Folder URL> [Password]
-import requests, sys, os, time, re
+import requests, sys, os, time, json
 from function import *
-from bs4 import BeautifulSoup
 from urllib.parse import unquote
+from datetime import datetime, timedelta
 
 def get_config():
     ps = myParser()
@@ -20,66 +20,26 @@ def is_file_url(url): return "/file/" in url
 def is_folder_url(url): return "/folder/" in url
 
 def extract_folder_code(url):
+    import re
     match = re.search(r'/folder/(\w+)', url)
     return match.group(1) if match else None
 
-def normalize_filename(name):
-    name = os.path.splitext(name)[0]
-    name = re.sub(r'[._\-]+', ' ', name)
-    name = re.sub(r'\b(1080p|720p|x264|bluray|webrip|web ?dl|vietsub|sub|dub|fshare|remux|hdr|hevc|aac|mp4|mkv|avi|eng|multi|truehd|dts|ac3|h264|h265|10bit)\b', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'[^a-zA-Z0-9 ]+', '', name)
-    name = re.sub(r'\s+', ' ', name).strip()
-    return name.lower()
+def get_existing_files():
+    target_path = "/content/drive/MyDrive/Moviesall/media/movies/All"
+    existing_files = set()
+    if os.path.exists(target_path):
+        print("-> Đang quét thư mục đích để kiểm tra file trùng lặp...")
+        for file in os.listdir(target_path):
+            existing_files.add(file)
+        print(f"-> Đã tìm thấy {len(existing_files)} file hiện có.")
+    return existing_files
 
-def list_drive_files(target_dir):
-    existing = set()
-    for root, dirs, files in os.walk(target_dir):
-        for name in files + dirs:
-            existing.add(normalize_filename(name))
-    return existing
-
-def extract_fshare_files_from_html(folder_url, cf):
-    headers = {"User-Agent": cf['Auth']['user_agent']}
-    res = requests.get(folder_url, headers=headers)
-    soup = BeautifulSoup(res.text, "html.parser")
-    files = []
-
-    for span in soup.find_all("span", class_="mdc-grid-tile__title"):
-        file_name = span.get_text(strip=True)
-        if not file_name:
-            continue
-
-        parent_tag = span.find_parent("fshare-file")
-        if not parent_tag:
-            continue
-
-        file_id = None
-        class_list = parent_tag.get("class", [])
-        for cls in class_list:
-            if cls.startswith("file") and len(cls) > 8:
-                file_id = cls.replace("file", "")
-                break
-
-        if file_id:
-            file_url = f"https://www.fshare.vn/file/{file_id}"
-            files.append((file_name, normalize_filename(file_name), file_url))
-
-    return files
+EXISTING_FILES = get_existing_files()
 
 def file_exists_in_local_drive(filename):
-    norm_fshare = normalize_filename(filename)
-    target_dir = "/content/drive/MyDrive/Moviesall/media/movies/All"
+    return filename in EXISTING_FILES
 
-    for root, dirs, files in os.walk(target_dir):
-        for d in dirs:
-            if normalize_filename(d) == norm_fshare:
-                return True
-        for f in files:
-            if normalize_filename(f) == norm_fshare:
-                return True
-    return False
-
-def download_and_upload(file_url, file_password, cf):
+def download_and_upload(file_url, file_password, cf, file_name=None):
     header = get_headers(cf)
     data = {
         "url": file_url,
@@ -88,19 +48,25 @@ def download_and_upload(file_url, file_password, cf):
         "zipflag": 0
     }
 
+    if file_name and file_exists_in_local_drive(file_name):
+        print(f"-> Bỏ qua {file_name}, đã tồn tại ở thư mục đích.")
+        return
+
     r = rq_fshare(URL=cf['API']['file_dl_api_url'], header=header, Data=data)
     if r.status_code != 200:
-        print("Fshare API error:", r.status_code)
-        exit(errorInfo(r.status_code))
+        print(f"Lỗi khi lấy link tải: {r.status_code}")
+        return
 
     j = requestToJson(r)
     dl_url = j['location']
-    file_name = unquote(dl_url.split('/')[-1])
+    if not file_name:
+        file_name = unquote(dl_url.split('/')[-1])
+    
     folder_download = cf['Drive']['file_download_path']
     file_path = os.path.join(folder_download.rstrip('/'), file_name)
 
     if file_exists_in_local_drive(file_name):
-        print(f"-> Skipping {file_name}, already exists at destination.")
+        print(f"-> Bỏ qua {file_name}, đã tồn tại ở thư mục đích.")
         return
 
     if not os.path.exists(folder_download):
@@ -113,41 +79,67 @@ def download_and_upload(file_url, file_password, cf):
     print(f"-> Save Folder: {folder_download}")
 
     chunk_download(dl_url, file_name, folder_download)
-    print("-> File saved locally.")
+    print("-> File đã lưu thành công.")
+    EXISTING_FILES.add(file_name)
 
     if cf['Drive'].get('remove_file_after_upload', 'False') == 'True':
+        print("-> Hoàn tất! Đang xóa file đã tải...")
         removeFile(file_path)
 
-def process_folder(folder_url, cf, current_path=""):
-    print("🌐 Scanning Fshare folder from HTML...")
-    drive_existing = list_drive_files(cf['Drive']['file_download_path'])
-    all_files = extract_fshare_files_from_html(folder_url, cf)
-
-    to_download = [(name, url) for name_raw, name, url in all_files if name not in drive_existing]
-    print(f"🔍 Found {len(to_download)} new file(s) to download")
-
-    for _, url in to_download:
-        download_and_upload(url, '', cf)
+def get_folder_file_list(folder_url, cf, current_path=""):
+    folder_code = extract_folder_code(folder_url)
+    all_files = []
+    page = 1
+    print(f"-> Đang quét thư mục Fshare {folder_url}...")
+    while True:
+        api_path = f"https://www.fshare.vn/api/v3/files/folder?linkcode={folder_code}&sort=type,-modified&page={page}"
+        r = requests.get(api_path, headers=get_headers(cf))
+        if r.status_code != 200:
+            print(f"Lỗi khi đọc trang thư mục {page}: {r.status_code}")
+            break
+        data = r.json()
+        folder_name = data['current']['name']
+        full_path = os.path.join(current_path, folder_name)
+        for item in data['items']:
+            if item['type'] == 1:
+                file_url = f"https://fshare.vn/file/{item['linkcode']}"
+                file_name = item['name']
+                if not file_exists_in_local_drive(file_name):
+                    all_files.append({
+                        'url': file_url,
+                        'name': file_name
+                    })
+                else:
+                    print(f"-> Bỏ qua {file_name}, đã tồn tại.")
+            else:
+                sub_folder_url = f"https://www.fshare.vn/folder/{item['linkcode']}"
+                sub_files = get_folder_file_list(sub_folder_url, cf, full_path)
+                all_files.extend(sub_files)
+        if not data.get('_links', {}).get('next'):
+            break
+        page += 1
         time.sleep(1)
+    return all_files
 
-# Entry point
+def process_folder(folder_url, cf):
+    files_to_download = get_folder_file_list(folder_url, cf)
+    print(f"-> Tìm thấy {len(files_to_download)} file cần tải.")
+    for i, file_info in enumerate(files_to_download, 1):
+        print(f"-> Đang tải file {i}/{len(files_to_download)}: {file_info['name']}")
+        download_and_upload(file_info['url'], '', cf, file_info['name'])
+
 if __name__ == "__main__":
     if len(sys.argv) == 1:
-        exit("-> Please include file or folder URL")
-
+        exit("-> Vui lòng cung cấp URL file hoặc thư mục")
     URL = sys.argv[1]
     PASSWORD = sys.argv[2] if len(sys.argv) == 3 else ''
-
     cf = get_config()
-
     if cf['Login']['session_id'] == '' or cf['Login']['token'] == '':
-        exit("-> Please login first!")
-
-    print("-> Connecting to Fshare...")
-
+        exit("-> Vui lòng đăng nhập trước!")
+    print("-> Đang kết nối đến Fshare...")
     if is_file_url(URL):
         download_and_upload(URL, PASSWORD, cf)
     elif is_folder_url(URL):
         process_folder(URL, cf)
     else:
-        print("-> Unsupported Fshare URL!")
+        print("-> URL Fshare không được hỗ trợ!")
